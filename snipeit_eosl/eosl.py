@@ -64,7 +64,28 @@ def fetch_lookup(api_url=DEFAULT_API_URL, timeout=30):
     return skus
 
 
-def resolve_many(parts, vendor_of=None, api_url=DEFAULT_API_URL, timeout=30, skus=None):
+def fetch_aliases(api_url=DEFAULT_API_URL, timeout=30):
+    """Fetch https://eosl.ai/data/aliases.json (variant aliases, HISTORY §82), or None.
+
+    The URL is the lookup URL with lookup.json replaced by aliases.json. Optional by design: any
+    failure returns None and matching proceeds exactly as it did before the table existed.
+    """
+    url = api_url.replace("lookup.json", "aliases.json")
+    if url == api_url:
+        return None
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+        if raw[:2] == b"\x1f\x8b":
+            raw = gzip.GzipFile(fileobj=io.BytesIO(raw)).read()
+        data = json.loads(raw.decode("utf-8"))
+        return {"open": data.get("open") or {}, "gated": data.get("gated") or {}}
+    except Exception:  # noqa: BLE001 - optional data; never block a run on it
+        return None
+
+
+def resolve_many(parts, vendor_of=None, api_url=DEFAULT_API_URL, timeout=30, skus=None, aliases=None):
     """Resolve an iterable of part numbers to normalised records.
 
     `vendor_of` is an optional callable part -> vendor name, used only to gate vendor-specific SKU
@@ -72,6 +93,8 @@ def resolve_many(parts, vendor_of=None, api_url=DEFAULT_API_URL, timeout=30, sku
     """
     if skus is None:
         skus = fetch_lookup(api_url=api_url, timeout=timeout)
+        if aliases is None:
+            aliases = fetch_aliases(api_url=api_url, timeout=timeout)
     exact, loose_index = matching.build_index(skus)
     out = {}
     for p in parts:
@@ -79,5 +102,5 @@ def resolve_many(parts, vendor_of=None, api_url=DEFAULT_API_URL, timeout=30, sku
             continue
         key = str(p)
         vendor = vendor_of(key) if vendor_of else None
-        out[key] = matching.normalise(matching.match(key, vendor, exact, loose_index))
+        out[key] = matching.normalise(matching.match(key, vendor, exact, loose_index, aliases))
     return out

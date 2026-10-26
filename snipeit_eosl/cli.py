@@ -14,7 +14,7 @@ import sys
 from . import eosl, report
 from .snipeit import SnipeIt, SnipeItError
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 
 def build_parser():
@@ -63,7 +63,8 @@ def main(argv=None):
               "rather than a clean result on purpose.", file=sys.stderr)
         return 2
 
-    rep = report.build(models, skus)
+    aliases = eosl.fetch_aliases(api_url=args.api_url, timeout=args.timeout)
+    rep = report.build(models, skus, aliases=aliases)
 
     if args.format == "json":
         text = json.dumps(rep, indent=2, sort_keys=True)

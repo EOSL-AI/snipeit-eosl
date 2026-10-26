@@ -45,15 +45,35 @@ def loose(s):
 
 
 def build_index(skus):
-    """Return (exact, loose_index): UPPER(pid)->rec and loose(pid)->rec. First writer wins."""
-    exact, loose_index = {}, {}
+    """Return (exact, loose_index): UPPER(pid)->rec and loose(pid)->rec.
+
+    A loose key shared by two different families is struck out rather than resolved: stripping
+    punctuation collapses distinct products onto one key (UAP-Outdoor / UAP-Outdoor+, and Palo Alto
+    GP-100 against Dell GP100, across vendors), and first-writer-wins handed back whichever came first
+    in the file. Unresolved is the correct answer to an ambiguous key. Same rule as src/match.js and
+    functions/mcp.js (HISTORY §82).
+    """
+    exact, loose_index, ambiguous = {}, {}, set()
     for rec in skus:
         pid = (rec.get("p") or "").strip().upper()
         if not pid:
             continue
         exact.setdefault(pid, rec)
-        loose_index.setdefault(loose(pid), rec)
+        lk = loose(pid)
+        if lk in loose_index:
+            if str(loose_index[lk].get("f")) != str(rec.get("f")):
+                ambiguous.add(lk)
+        else:
+            loose_index[lk] = rec
+    for k in ambiguous:
+        loose_index.pop(k, None)
     return exact, loose_index
+
+
+def _vendor_ok(vendor, rec):
+    """True when no vendor is named, or the named vendor and the record's vendor contain one another."""
+    lv, rv = loose(vendor), loose(rec.get("v"))
+    return not lv or lv in rv or rv in lv
 
 
 def _is_fortinet(vendor):
@@ -79,17 +99,31 @@ def candidate_loose_keys(part, vendor=None):
     return keys
 
 
-def match(part, vendor, exact, loose_index):
-    """Resolve a part number to a record, or None. Exact -> loose -> vendor-gated alias."""
+def match(part, vendor, exact, loose_index, aliases=None):
+    """Resolve a part number to a record, or None. Exact -> loose -> Fortinet short code -> variant alias.
+
+    `aliases` is https://eosl.ai/data/aliases.json (optional). Its entries are vetted when the site is
+    built: every record an alias could mean has the same vendor and the same dates (EX4300-48T-TAA ->
+    EX4300-48T, ASA5506 -> ASA5506-K8). "gated" aliases apply only when a vendor is named, and an alias
+    hit must belong to the named vendor, so a Juniper MX80 can never resolve to a Meraki MX80.
+    """
     if not part:
         return None
     u = part.strip().upper()
     if u in exact:
         return exact[u]
-    for k in candidate_loose_keys(part, vendor):
+    keys = candidate_loose_keys(part, vendor)
+    for k in keys:
         rec = loose_index.get(k)
         if rec:
             return rec
+    if aliases:
+        opened, gated = aliases.get("open") or {}, aliases.get("gated") or {}
+        for k in keys:
+            p = opened.get(k) or (gated.get(k) if loose(vendor) else None)
+            rec = exact.get(str(p).upper()) if p else None
+            if rec and _vendor_ok(vendor, rec):
+                return rec
     return None
 
 

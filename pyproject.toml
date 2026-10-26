@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "snipeit-eosl"
-version = "1.0.0"
+version = "1.1.0"
 description = "Audit a Snipe-IT inventory against the EOSL.ai hardware end-of-service-life database."
 readme = "README.md"
 requires-python = ">=3.8"

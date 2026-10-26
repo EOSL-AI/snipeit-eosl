@@ -37,7 +37,7 @@ def _candidates(model):
     return out
 
 
-def build(models, skus, today=None):
+def build(models, skus, today=None, aliases=None):
     """Return {'rows': [...], 'summary': {...}}.
 
     One row per Snipe-IT model. `matched_on` records which field resolved, and `status` is computed
@@ -51,7 +51,7 @@ def build(models, skus, today=None):
         rec, matched_on, tried = None, None, []
         for field, value in _candidates(m):
             tried.append(value)
-            hit = matching.match(value, m.get("manufacturer"), exact, loose_index)
+            hit = matching.match(value, m.get("manufacturer"), exact, loose_index, aliases)
             if hit is not None:
                 rec, matched_on = matching.normalise(hit), field
                 break
